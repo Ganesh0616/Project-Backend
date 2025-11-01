@@ -3,6 +3,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
+const serverless = require("serverless-http");
 
 dotenv.config();
 
@@ -11,22 +12,32 @@ const orderRoutes = require("./Routes/orderRoutes");
 const authRoutes = require("./Routes/auth");
 
 const app = express();
-const port = process.env.PORT || 5000;
 
-// Middleware
+// ===== Strip /api prefix middleware (Option B) =====
+// Makes requests like /api/PowerHouseFitHub/... appear to Express as /PowerHouseFitHub/...
+app.use((req, res, next) => {
+  if (req.url && req.url.startsWith("/api/")) {
+    req.url = req.url.replace(/^\/api/, "");
+    if (req.originalUrl) req.originalUrl = req.originalUrl.replace(/^\/api/, "");
+  } else if (req.url === "/api") {
+    req.url = "/";
+    if (req.originalUrl) req.originalUrl = "/";
+  }
+  next();
+});
+
+// CORS + JSON
 const allowedOrigins = [
-  "http://localhost:3000",                 // local dev React
-  "https://powerhouse-frontend-ybst.vercel.app" // deployed frontend (no trailing slash)
+  "http://localhost:3000",
+  "https://powerhouse-frontend-ybst.vercel.app"
 ];
 
 app.use(express.json());
 app.use(cors({
   origin: function(origin, callback){
-    // allow requests with no origin (like mobile apps, curl, Postman)
-    if(!origin) return callback(null, true);
+    if(!origin) return callback(null, true); // allow curl/postman/no-origin
     if(allowedOrigins.indexOf(origin) === -1){
-      const msg = "The CORS policy for this site does not allow access from the specified Origin.";
-      return callback(new Error(msg), false);
+      return callback(new Error("CORS origin denied: " + origin), false);
     }
     return callback(null, true);
   },
@@ -34,33 +45,54 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// MongoDB connection
-const mongoURI = process.env.MONGO_URI;
-if(!mongoURI){
-  console.error("❌ MONGO_URI is not set in environment variables");
-  process.exit(1);
-}
+// request logger (helps debug routing & crashes)
+app.use((req, res, next) => {
+  console.log(`[REQ] ${new Date().toISOString()} ${req.method} ${req.originalUrl} -> ${req.url} Host: ${req.headers.host}`);
+  next();
+});
 
-mongoose.connect(mongoURI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => {
-    console.error("❌ MongoDB connection error:", err);
-    process.exit(1);
-  });
-
-// Routes
+// ===== Mount routers (unchanged; router files must use relative paths) =====
 app.use("/PowerHouseFitHub", productRoutes);
-app.use("/PowerHouseFitHub", orderRoutes); 
+app.use("/PowerHouseFitHub", orderRoutes);
 app.use("/PowerHouseFitHub", authRoutes);
 
-// Error handler for CORS and others
+// public health-check (accessible at /api/healthz)
+app.get("/api/healthz", (req, res) => res.json({ ok: true }));
+
+// helpful 404 fallback if route not matched
+app.use((req, res, next) => {
+  res.status(404).json({
+    error: "Not Found - request reached function but no matching route found",
+    method: req.method,
+    path: req.originalUrl
+  });
+});
+
+// central error handler
 app.use((err, req, res, next) => {
-  console.error(err && err.message ? err.message : err);
+  console.error("[ERR]", err && err.stack ? err.stack : err);
   res.status(500).json({ error: err.message || "Internal Server Error" });
 });
 
-// Server
-app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
+// ===== Mongo connection (serverless-friendly) =====
+const mongoURI = process.env.MONGO_URI;
+if (!mongoURI) {
+  console.warn("⚠️ MONGO_URI is not set - DB will not connect in this environment.");
+} else {
+  // Reuse existing connection if available (warm starts)
+  if (!global.__mongoClientPromise) {
+    mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+      .then(() => console.log("✅ MongoDB connected"))
+      .catch(err => {
+        // log error but don't exit (serverless should still boot so logs are available)
+        console.error("❌ MongoDB connection error:", err && err.stack ? err.stack : err);
+      });
+    global.__mongoClientPromise = mongoose;
+  } else {
+    console.log("♻️ Reusing existing Mongo connection");
+  }
+}
+
+// Export app and serverless handler for Vercel
+module.exports = app;
+module.exports.handler = serverless(app);
