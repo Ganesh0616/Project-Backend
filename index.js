@@ -1,21 +1,24 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
-dotenv.config();
 const cors = require("cors");
+
+dotenv.config();
 
 const productRoutes = require("./Routes/Products_routes");
 const orderRoutes = require("./Routes/orderRoutes");
 const authRoutes = require("./Routes/auth");
 
 const app = express();
-
-const port = 5000 || "https://project-backend-mu-one.vercel.app/"
+const port = process.env.PORT || 5000;
 
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: `${"http://localhost:5000" || "https://project-backend-mu-one.vercel.app/"}`,
+  origin: [
+    "http://localhost:3000", // React local dev
+    "https://powerhouse-frontend-ybst.vercel.app/", // Vercel frontend
+  ],
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -30,5 +33,5 @@ app.use("/PowerHouseFitHub", productRoutes);
 app.use("/PowerHouseFitHub", orderRoutes); 
 app.use("/PowerHouseFitHub", authRoutes);
 
-
+// Server
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
