@@ -10,10 +10,12 @@ const authRoutes = require("./Routes/auth");
 
 const app = express();
 
+const port = 5000 || "https://project-backend-mu-one.vercel.app/"
+
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: `${"http://localhost:3000" || "https://project-backend-mu-one.vercel.app/"}`,
+  origin: `${"http://localhost:5000" || "https://project-backend-mu-one.vercel.app/"}`,
   credentials: true,
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
@@ -29,4 +31,4 @@ app.use("/PowerHouseFitHub", orderRoutes);
 app.use("/PowerHouseFitHub", authRoutes);
 
 
-app.listen(5000, () => console.log("🚀 Server running on port 5000"));
+app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
